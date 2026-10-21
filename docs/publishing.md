@@ -14,7 +14,13 @@ Deploy Inkra website to build the pinned sources, verify archive identity,
 run production-route/browser checks and deploy the resulting Pages artifact.
 The github-pages environment restricts publication to the approved branch.
 
-version.json records website, docs and library commits. Each run retains the
+Registry consumers install the exact npm version and verify its archive hashes;
+local candidate consumers rebuild the pinned source and compare the archive.
+Neither mode uses a source alias. The docs package checker verifies the installed
+dependency, lockfile and release metadata before the site build.
+
+version.json records website, docs and library commits plus the consumed package
+name, version, source and integrity. Each run retains the
 complete website artifact for 90 days. To roll back, commit a previously
 successful docsRevision to release.json and let the same checks deploy it.
 Do not rewrite Git history or point the release at a mutable branch.

@@ -39,11 +39,14 @@ jobs:
         run: |
           node --input-type=module -e "
             import { readFileSync, appendFileSync } from 'node:fs';
-            const { revision } = JSON.parse(readFileSync('site/library-candidate.json'));
+            const { revision, source } = JSON.parse(readFileSync('site/library-candidate.json'));
             if (!/^[0-9a-f]{40}$/.test(revision)) throw Error('Pin an exact library commit');
+            if (source !== undefined && source !== 'registry') throw Error('Unknown library source');
             appendFileSync(process.env.GITHUB_OUTPUT, 'library=' + revision + '\n');
+            appendFileSync(process.env.GITHUB_OUTPUT, 'source=' + (source || 'candidate') + '\n');
           "
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: steps.candidate.outputs.source != 'registry'
         with:
           repository: inkrajs/inkra
           ref: ${{ steps.candidate.outputs.library }}
@@ -53,14 +56,18 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
+        if: steps.candidate.outputs.source != 'registry'
         working-directory: .library
       - run: npm run build
+        if: steps.candidate.outputs.source != 'registry'
         working-directory: .library
       - run: GITHUB_SHA="$LIBRARY_REVISION" npm run check:package
+        if: steps.candidate.outputs.source != 'registry'
         working-directory: .library
         env:
           LIBRARY_REVISION: ${{ steps.candidate.outputs.library }}
       - run: npm run prepare:library -- ../.library
+        if: steps.candidate.outputs.source != 'registry'
         working-directory: site
       - run: git diff --exit-code -- library-candidate.json package-lock.json
         working-directory: site
@@ -87,11 +94,14 @@ jobs:
           LIBRARY_REVISION: ${{ steps.candidate.outputs.library }}
         run: |
           node --input-type=module -e "
-            import { writeFileSync } from 'node:fs';
+            import { readFileSync, writeFileSync } from 'node:fs';
+            const library = JSON.parse(readFileSync('site/library-candidate.json'));
             writeFileSync('site/dist/version.json', JSON.stringify({
               site: process.env.GITHUB_SHA,
               docs: process.env.DOCS_REVISION,
-              library: process.env.LIBRARY_REVISION
+              library: process.env.LIBRARY_REVISION,
+              package: { name: library.name, version: library.version,
+                source: library.source || 'candidate', integrity: library.integrity }
             }, null, 2) + '\n');
           "
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

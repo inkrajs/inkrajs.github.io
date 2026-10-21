@@ -1,0 +1,123 @@
+name: Deploy Inkra website
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Read approved website revision
+        id: release
+        run: |
+          node --input-type=module -e "
+            import { readFileSync, appendFileSync } from 'node:fs';
+            const { docsRevision } = JSON.parse(readFileSync('release.json'));
+            if (!/^[0-9a-f]{40}$/.test(docsRevision)) throw Error('Pin an exact docs commit');
+            appendFileSync(process.env.GITHUB_OUTPUT, 'docs=' + docsRevision + '\n');
+          "
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: inkrajs/docs
+          ref: ${{ steps.release.outputs.docs }}
+          path: site
+          persist-credentials: false
+      - name: Read verified library revision
+        id: candidate
+        run: |
+          node --input-type=module -e "
+            import { readFileSync, appendFileSync } from 'node:fs';
+            const { revision } = JSON.parse(readFileSync('site/library-candidate.json'));
+            if (!/^[0-9a-f]{40}$/.test(revision)) throw Error('Pin an exact library commit');
+            appendFileSync(process.env.GITHUB_OUTPUT, 'library=' + revision + '\n');
+          "
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: inkrajs/inkra
+          ref: ${{ steps.candidate.outputs.library }}
+          path: .library
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+        working-directory: .library
+      - run: npm run build
+        working-directory: .library
+      - run: npm run check:package
+        working-directory: .library
+        env:
+          GITHUB_SHA: ${{ steps.candidate.outputs.library }}
+      - run: npm run prepare:library -- ../.library
+        working-directory: site
+      - run: git diff --exit-code -- library-candidate.json package-lock.json
+        working-directory: site
+      - run: npm ci --ignore-scripts
+        working-directory: site
+      - run: npm run build
+        working-directory: site
+      - run: npx playwright install --with-deps chromium
+        working-directory: site
+      - name: Test production assets and direct routes
+        working-directory: site
+        run: |
+          python3 -m http.server 4180 --bind 127.0.0.1 --directory dist > /tmp/inkra-static.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4180/ > /dev/null && break
+            sleep 1
+          done
+          node scripts/verify-deployment.mjs
+      - name: Record deployed source identity
+        env:
+          DOCS_REVISION: ${{ steps.release.outputs.docs }}
+          LIBRARY_REVISION: ${{ steps.candidate.outputs.library }}
+        run: |
+          node --input-type=module -e "
+            import { writeFileSync } from 'node:fs';
+            writeFileSync('site/dist/version.json', JSON.stringify({
+              site: process.env.GITHUB_SHA,
+              docs: process.env.DOCS_REVISION,
+              library: process.env.LIBRARY_REVISION
+            }, null, 2) + '\n');
+          "
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: website-${{ github.sha }}
+          path: |
+            site/dist/
+            site/library-candidate.json
+            release.json
+          include-hidden-files: true
+          retention-days: 90
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: site/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy approved artifact
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

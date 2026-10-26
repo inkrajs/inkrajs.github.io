@@ -25,7 +25,11 @@ complete website artifact for 90 days. To roll back, commit a previously
 successful docsRevision to release.json and let the same checks deploy it.
 Do not rewrite Git history or point the release at a mutable branch.
 
-The workflow caches npm downloads using site/package-lock.json. Failed
+The workflow caches npm downloads using site/package-lock.json. Browser setup
+no longer installs OS packages on each runner: the build uses the
+same digest-pinned Playwright 1.64.1 image as docs CI and verifies the installed
+package version plus a real Chromium launch. Update the image and its guard with
+the docs Playwright lockfile. Image pull time remains part of setup. Failed
 production checks retain the static-server log and available screenshots for
 14 days. Deployment stays serialized and non-cancelling; production route
 checks are not replaced by a docs CI status or a matching version number.

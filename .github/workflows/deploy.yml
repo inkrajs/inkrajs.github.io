@@ -55,6 +55,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
       - run: npm ci --ignore-scripts
         if: steps.candidate.outputs.source != 'registry'
         working-directory: .library
@@ -88,6 +90,17 @@ jobs:
             sleep 1
           done
           node scripts/verify-deployment.mjs
+      - name: Preserve production-check diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: website-check-diagnostics
+          path: |
+            /tmp/inkra-static.log
+            /tmp/inkra-*.png
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 14
       - name: Record deployed source identity
         env:
           DOCS_REVISION: ${{ steps.release.outputs.docs }}

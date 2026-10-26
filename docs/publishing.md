@@ -37,3 +37,10 @@ checks are not replaced by a docs CI status or a matching version number.
 After deployment, check version.json, the homepage and a direct /docs route.
 Run the docs scripts/verify-deployment.mjs with BASE_URL=https://inkrajs.github.io
 and verify-homepage.mjs for desktop/mobile interactions and screenshots.
+
+On 2026-10-27 (Asia/Shanghai), run 40410501130 measured the prebuilt-runtime
+build/production-check job at 124s, versus 749s in release deployment 40405863046.
+Cold container initialization took 35s, replacing the old 644s browser/OS
+installation. The same production-route checks passed in 57s (previously 53s).
+This is a measured website comparison, not a benchmark of the full npm release.
+The production server readiness loop explicitly uses Bash in the container.
